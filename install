@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# host
+if [ -z "$1" ] || [ "$1" != "nginx" ] && [ "$1" != "traefik" ]; then
+    echo "Choose the reverse proxy: [nginx] or [traefik]"
+    exit 1
+fi
+
+# install reverse proxy
+COMPOSE_PROJECT_NAME=$1 COMPOSE_PROFILES=$1 docker compose --env-file .env.user up -d --remove-orphans --build
+
+# Reverse Proxy
+if [ "$1" == "nginx" ]; then
+  docker cp configs/nginx.conf nginx-proxy:/etc/nginx
+fi
