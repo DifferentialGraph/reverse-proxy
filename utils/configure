@@ -1,0 +1,19 @@
+#!/bin/bash
+
+whitelist-ip-addresses()
+{
+    for (( j=0; j<${#WHITELIST[@]}; j++ ));
+    do
+    sed -i '/^http\s*{/,/}/ { 
+        /}/i \
+    '""'\
+    '"allow ${WHITELIST[$j]};"'
+    }' "$1"
+    done
+
+    sed -i '/^http\s*{/,/}/ { 
+        /}/i \
+    '""'\
+    '"deny all;"'
+    }' "$1"
+}

@@ -1,0 +1,48 @@
+#!/bin/bash
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. $DIR/configure
+
+proxy-start() {
+    if [ -f "$PROXY_DIR/docker-compose.yml" ]; then
+        source $PROXY_DIR/.env.user
+        cp $PROXY_DIR/configs/nginx.conf /tmp
+        if [ ! -z "$WHITELIST" ]; then
+            export WHITELIST=$WHITELIST
+            whitelist-ip-addresses /tmp/nginx.conf
+        fi
+        COMPOSE_FILE=$PROXY_DIR/docker-compose.yml docker compose --env-file $PROXY_DIR/.env.user pull
+        COMPOSE_FILE=$PROXY_DIR/docker-compose.yml docker compose --env-file $PROXY_DIR/.env.user up -d --remove-orphans --build
+        docker cp /tmp/nginx.conf nginx-proxy:/etc/nginx
+    else
+        echo "reverse proxy configuration file not found."
+    fi
+}
+
+proxy-stop() {
+    if [ -f "$PROXY_DIR/docker-compose.yml" ]; then
+        COMPOSE_FILE=$PROXY_DIR/docker-compose.yml docker compose --env-file $PROXY_DIR/.env.user stop
+    else
+        echo "reverse proxy configuration file not found."
+    fi
+}
+
+proxy-restart() {
+    proxy-stop $1
+    proxy-start $1
+}
+
+proxy-monitor() {
+    # Check if session name exists
+    SESSIONEXISTS=$(tmux list-sessions | grep reverse-proxy)
+
+    # Set up monitoring interface
+    if [ "$SESSIONEXISTS" = "" ]
+    then
+        tmux new-session -d -s reverse-proxy
+        tmux rename-window -t 0 'nginx-proxy-log' && tmux send-keys -t 'nginx-proxy-log' "docker logs nginx-proxy --tail 10 -f | pino-pretty -c -t" C-m
+        tmux new-window -t $1:1 -n 'nginx-ssl-log' && tmux send-keys -t 'nginx-ssl-log' "docker logs nginx-ssl --tail 10 -f | pino-pretty -c -t" C-m
+        tmux new-window -t $1:2 -n 'nginx-proxy-cli' && tmux send-keys -t 'nginx-proxy-cli' "docker exec -it nginx-proxy sh" C-m 
+        tmux new-window -t $1:3 -n 'nginx-ssl-cli' && tmux send-keys -t 'nginx-ssl-cli' "docker exec -it nginx-ssl sh" C-m
+    fi
+    tmux attach-session -t reverse-proxy:0
+}

@@ -1,15 +1,24 @@
 #!/bin/bash
+source utils/manage
+source .env.user
 
-# host
-if [ -z "$1" ] || [ "$1" != "nginx" ] && [ "$1" != "traefik" ]; then
-    echo "Choose the reverse proxy: [nginx] or [traefik]"
-    exit 1
+# config
+cp configs/nginx.conf /tmp
+if [ ! -z "$WHITELIST" ]; then
+    export WHITELIST=$WHITELIST
+    whitelist-ip-addresses /tmp/nginx.conf
 fi
 
 # install reverse proxy
-COMPOSE_PROJECT_NAME=$1 COMPOSE_PROFILES=$1 docker compose --env-file .env.user up -d --remove-orphans --build
+docker compose --env-file .env.user up -d --remove-orphans --build
+docker cp /tmp/nginx.conf nginx-proxy:/etc/nginx
 
-# Reverse Proxy
-if [ "$1" == "nginx" ]; then
-  docker cp configs/nginx.conf nginx-proxy:/etc/nginx
+if ! grep -q "#proxy-setup" ~/.bashrc; then
+    echo "Modifying .bashrc ..."
+    DIR="$( cd "$( dirname -- $0 )" && pwd )"
+    echo -e "\n" >> ~/.bashrc
+    echo "#proxy-setup" >> ~/.bashrc
+    echo "export PROXY_DIR=$DIR" >> ~/.bashrc
+    echo 'source $PROXY_DIR/utils/manage' >> ~/.bashrc
+    source ~/.bashrc
 fi
