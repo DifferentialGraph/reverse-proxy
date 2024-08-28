@@ -27,8 +27,7 @@ proxy-stop() {
 }
 
 proxy-restart() {
-    proxy-stop $1
-    proxy-start $1
+    proxy-stop $1 && proxy-start $1
 }
 
 proxy-monitor() {

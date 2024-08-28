@@ -1,24 +1,75 @@
-#!/bin/bash
-source utils/manage
-source .env.user
+#!/bin/bash -i
 
-# config
-cp configs/nginx.conf /tmp
-if [ ! -z "$WHITELIST" ]; then
-    export WHITELIST=$WHITELIST
-    whitelist-ip-addresses /tmp/nginx.conf
-fi
+basics-install() {
+    apt update
+    apt -y install ca-certificates curl grep git
+}
 
-# install reverse proxy
-docker compose --env-file .env.user up -d --remove-orphans --build
-docker cp /tmp/nginx.conf nginx-proxy:/etc/nginx
+docker-install() {
+    if ! grep -q "docker" <<< $(find /etc/apt/ -name *.list | xargs cat | grep  ^[[:space:]]*deb | grep -v deb-src); then
+        echo "Installing Docker..."
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+        echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            apt update && apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-compose
+        apt -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-compose
+    fi
+}
 
-if ! grep -q "#proxy-setup" ~/.bashrc; then
-    echo "Modifying .bashrc ..."
-    DIR="$( cd "$( dirname -- $0 )" && pwd )"
-    echo -e "\n" >> ~/.bashrc
-    echo "#proxy-setup" >> ~/.bashrc
-    echo "export PROXY_DIR=$DIR" >> ~/.bashrc
-    echo 'source $PROXY_DIR/utils/manage' >> ~/.bashrc
-    source ~/.bashrc
-fi
+nodejs-install() {
+    if [ ! -d "$HOME/.nvm" ]; then
+        echo "Installing NVM..."
+        apt -y install curl grep
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
+        source $HOME/.bashrc
+        nvm install --lts
+        nvm use --lts
+    fi
+
+    if [ `npm list -g | grep -c pino-pretty` -eq 0 ]; then
+        echo "Installing Pino Pretty..."
+        npm install -g pino-pretty
+    fi
+}
+
+proxy-install() {
+    [ -f ".env.user" ] || { echo "Error: environment file not found"; return 1; }
+    source .env.user
+    source utils/configure
+
+    cp configs/nginx.conf /tmp
+    if [ ! -z "$WHITELIST" ]; then
+        export WHITELIST=$WHITELIST
+        whitelist-ip-addresses /tmp/nginx.conf
+    fi
+
+    docker compose --env-file .env.user up -d --remove-orphans --build
+    sleep 1
+    docker cp /tmp/nginx.conf nginx-proxy:/etc/nginx
+
+    if ! grep -q "#proxy-setup" ~/.bashrc; then
+        echo "Modifying .bashrc ..."
+        DIR="$( cd "$( dirname -- $0 )" && pwd )"
+        echo -e "\n" >> ~/.bashrc
+        echo "#proxy-setup" >> ~/.bashrc
+        echo "export PROXY_DIR=$DIR" >> ~/.bashrc
+        echo 'source $PROXY_DIR/utils/manage' >> ~/.bashrc
+        source $HOME/.bashrc
+    fi
+}
+
+
+apt update && apt install -y whiptail
+whiptail --title "Reverse Proxy" --yesno "Install reverse proxy?" 8 78 || { echo "User exit"; exit 1; }
+
+basics-install || { echo "Error: could not install basic tools"; exit 1; }
+
+docker-install || { echo "Error: could not install Docker"; exit 1; }
+
+nodejs-install || { echo "Error: could not install Node.js"; exit 1; }
+
+proxy-install ||  { echo "Error: could not install mail server"; exit 1; }
